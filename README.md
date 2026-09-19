@@ -1,15 +1,21 @@
 # Real-Time Hand Finger Recognition & Voice Assistant
 
-A Python computer-vision app that watches your hand through the webcam, counts how many
-fingers you are holding up (0–5), shows the number and the word on screen, and **speaks it
-out loud — completely offline**.
+A computer-vision app that watches your hands through the webcam, counts how many fingers
+you are holding up (0–10), shows the number and the word on screen, and speaks it out loud.
+The Python desktop version uses offline Windows speech; the Vercel version uses browser speech.
+
+## Vercel browser version
+
+The deployed browser version is served from `index.html`. Open it over HTTPS, allow camera
+access, and show one or two hands. It uses MediaPipe in the browser and can count up to 10
+fingers. Speech uses the browser's built-in text-to-speech support.
 
 ---
 
 ## 1. Project Overview
 
-Point your hand at the laptop camera. The program finds your hand, draws 21 skeleton points
-on it, works out which fingers are raised, and announces the result.
+Point one or two hands at the camera. The program finds each hand, draws 21 skeleton points
+on it, adds the raised fingers, and announces the result.
 
 | You show | Screen shows | Laptop says |
 |---|---|---|
@@ -28,7 +34,7 @@ No internet, no cloud API, no database, no training required.
 
 - Real-time hand detection from the laptop webcam
 - 21 hand landmarks + connections drawn live on your hand
-- Finger counting from 0 to 5, works with the left or the right hand
+- Finger counting from 0 to 10 across two hands
 - Clean on-screen UI with title, result panel and instructions
 - Offline voice output with `pyttsx3`
 - **Anti-repeat voice** — says each number once, not on every frame

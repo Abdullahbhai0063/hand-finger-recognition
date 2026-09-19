@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hand Count Studio</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <style>
+    :root { color-scheme: dark; --ink: #f5f3ed; --muted: #a8aaa5; --accent: #d7f36b; --panel: #171a18; --line: #343934; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #0d0f0e; color: var(--ink); font: 16px/1.45 Georgia, serif; }
+    main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+    header { display: flex; justify-content: space-between; gap: 24px; align-items: end; border-bottom: 1px solid var(--line); padding-bottom: 22px; }
+    h1 { margin: 0; font-size: clamp(2.2rem, 6vw, 5.8rem); font-weight: 400; line-height: .9; letter-spacing: -.04em; }
+    .eyebrow { color: var(--accent); font: 700 12px/1.2 Consolas, monospace; letter-spacing: .16em; text-transform: uppercase; }
+    .status { color: var(--muted); font: 13px Consolas, monospace; text-align: right; }
+    .stage { position: relative; overflow: hidden; margin-top: 24px; border: 1px solid var(--line); background: #050605; aspect-ratio: 16 / 9; }
+    video, canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    .result { position: absolute; left: 20px; bottom: 20px; z-index: 2; background: rgba(13,15,14,.88); border: 1px solid var(--line); padding: 16px 20px; min-width: 180px; }
+    .number { color: var(--accent); font: 700 clamp(3rem, 9vw, 7rem)/.85 Consolas, monospace; }
+    .word { margin-top: 10px; font: 700 14px Consolas, monospace; letter-spacing: .12em; }
+    button { margin-top: 18px; border: 0; padding: 13px 20px; background: var(--accent); color: #10120f; font: 700 14px Consolas, monospace; cursor: pointer; }
+    button:disabled { opacity: .45; cursor: wait; }
+    .note { color: var(--muted); margin: 18px 0 0; font-size: 15px; }
+    @media (max-width: 640px) { main { width: min(100% - 20px, 1180px); padding-top: 20px; } header { display: block; } .status { margin-top: 16px; text-align: left; } .stage { aspect-ratio: 4 / 5; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div><div class="eyebrow">Realtime / 00-10</div><h1>Hand Count<br>Studio</h1></div>
+      <div class="status" id="status">Camera waiting</div>
+    </header>
+    <section class="stage">
+      <video id="video" playsinline></video>
+      <canvas id="canvas"></canvas>
+      <div class="result"><div class="number" id="number">--</div><div class="word" id="word">START CAMERA</div></div>
+    </section>
+    <button id="start">Start camera</button>
+    <p class="note">Allow camera access, then show one or two hands. The total is spoken once whenever the confirmed count changes.</p>
+  </main>
+  <script>
+    const words = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+    const startButton = document.getElementById('start');
+    const status = document.getElementById('status');
+    const number = document.getElementById('number');
+    const word = document.getElementById('word');
+    let recent = [], lastSpoken = null, camera;
+
+    function countHand(landmarks) {
+      let count = 0;
+      const thumbRight = landmarks[17].x < landmarks[5].x;
+      count += thumbRight ? landmarks[4].x > landmarks[3].x : landmarks[4].x < landmarks[3].x;
+      [[8, 6], [12, 10], [16, 14], [20, 18]].forEach(([tip, pip]) => { count += landmarks[tip].y < landmarks[pip].y; });
+      return count;
+    }
+
+    function speak(total) {
+      if (total === lastSpoken) return;
+      lastSpoken = total;
+      speechSynthesis.cancel();
+      speechSynthesis.speak(new SpeechSynthesisUtterance(words[total]));
+    }
+
+    function onResults(results) {
+      canvas.width = video.videoWidth || 960;
+      canvas.height = video.videoHeight || 540;
+      context.clearRect(0, 0, canvas.width, canvas.height);
+      let total = 0;
+      (results.multiHandLandmarks || []).forEach(landmarks => {
+        total += countHand(landmarks);
+        drawConnectors(context, landmarks, HAND_CONNECTIONS, { color: '#d7f36b', lineWidth: 3 });
+        drawLandmarks(context, landmarks, { color: '#ffffff', lineWidth: 1, radius: 3 });
+      });
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length) {
+        recent.push(total); if (recent.length > 3) recent.shift();
+        if (recent.length === 3 && recent.every(value => value === total)) { number.textContent = total; word.textContent = words[total].toUpperCase(); speak(total); }
+      } else { recent = []; lastSpoken = null; number.textContent = '--'; word.textContent = 'NO HAND'; }
+    }
+
+    startButton.addEventListener('click', async () => {
+      startButton.disabled = true; status.textContent = 'Requesting camera...';
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        video.srcObject = stream; await video.play();
+        const hands = new Hands({ locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: .7, minTrackingConfidence: .6 });
+        hands.onResults(onResults);
+        camera = new Camera(video, { onFrame: async () => { await hands.send({ image: video }); }, width: 960, height: 540 });
+        camera.start(); status.textContent = 'Camera live / up to 10 fingers'; startButton.textContent = 'Camera running';
+      } catch (error) { status.textContent = 'Camera permission required'; startButton.disabled = false; console.error(error); }
+    });
+  </script>
+</body>
+</html>
